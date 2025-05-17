@@ -2,6 +2,9 @@
 ## Run code
 ### require packages
 ```
+pip install opencv-python
+pip install numpy
+pip install tqdm
 pip install staintools
 pip install spams-bin
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118  --> 呃我不確定這個，可能就裝適合你的CUDA & pytorch
