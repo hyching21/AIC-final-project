@@ -11,6 +11,7 @@ import torchvision.transforms as transforms
 import torch.nn.functional as F
 from tqdm import tqdm
 import staintools
+import argparse
 
 IMAGE_SIZE = 256
 BATCH_SIZE = 8
@@ -19,7 +20,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 DATA_DIR = "dataset"
 
 class UNet(nn.Module):
-    def __init__(self):
+    def __init__(self, args):
         super(UNet, self).__init__()
         def CBR(in_channels, out_channels):
             return nn.Sequential(
@@ -30,7 +31,10 @@ class UNet(nn.Module):
                 nn.BatchNorm2d(out_channels),
                 nn.ReLU(inplace=True)
             )
-        self.enc1 = CBR(1, 64)      # gray or rbg img
+        if args.rgb:
+            self.enc1 = CBR(3, 64)      # rbg img
+        else:
+            self.enc1 = CBR(1, 64)      # gray img
         self.enc2 = CBR(64, 128)
         self.enc3 = CBR(128, 256)
         self.enc4 = CBR(256, 512)
@@ -83,18 +87,15 @@ def reisze_img(img, target_size=(IMAGE_SIZE, IMAGE_SIZE), is_mask=False):
     return img
 
 class GlandDataset(Dataset):
-    def __init__(self, img_paths, mask_paths, target_img_path=None, transform=None):
+    def __init__(self, img_paths, mask_paths, args, target_img_path=None, transform=None):
         self.img_paths = img_paths
         self.mask_paths = mask_paths
-        # self.transform = transforms.Compose([
-        #     transforms.ToTensor(),
-        #     transforms.Resize((IMAGE_SIZE, IMAGE_SIZE))
-        # ])
         self.macenko = (target_img_path is not None)
+        self.args = args
 
         # stain normalizer
         if self.macenko:
-            self.transform = transform
+            # self.transform = transform
             self.normalizer = staintools.StainNormalizer(method='macenko')
 
             target = cv2.imread(target_img_path)
@@ -113,26 +114,34 @@ class GlandDataset(Dataset):
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             img = staintools.LuminosityStandardizer.standardize(img)
             img = self.normalizer.transform(img)
-            # img = reisze_img(img, is_mask=False)
-            img = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
+            if self.args.resize:
+                img = reisze_img(img, is_mask=False)
+            else:
+                img = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
             img = transforms.ToTensor()(img)
 
             mask = cv2.imread(self.mask_paths[idx], cv2.IMREAD_GRAYSCALE)
-            # mask = reisze_img(mask, is_mask=True)
-            mask = cv2.resize(mask, (IMAGE_SIZE, IMAGE_SIZE))
+            if self.args.resize:
+                mask = reisze_img(mask, is_mask=True)
+            else:
+                mask = cv2.resize(mask, (IMAGE_SIZE, IMAGE_SIZE))
             mask = (mask > 0).astype(np.float32)
             mask = torch.tensor(mask).unsqueeze(0)  # (1, H, W) to fit (channel, H, W)
 
         # read img as gray scale
         else:
             img = cv2.imread(self.img_paths[idx], cv2.IMREAD_GRAYSCALE)
-            # img = reisze_img(img, is_mask=False)
-            img = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
+            if self.args.resize:
+                img = reisze_img(img, is_mask=False)
+            else:
+                img = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
             img = transforms.ToTensor()(img)
             
             mask = cv2.imread(self.mask_paths[idx], cv2.IMREAD_GRAYSCALE)
-            # mask = reisze_img(mask, is_mask=True)
-            mask = cv2.resize(mask, (IMAGE_SIZE, IMAGE_SIZE))
+            if self.args.resize:
+                mask = reisze_img(mask, is_mask=True)
+            else:
+                mask = cv2.resize(mask, (IMAGE_SIZE, IMAGE_SIZE))
             mask = (mask > 0).astype(np.float32)
             mask = torch.tensor(mask).unsqueeze(0)  # (1, H, W) to fit (channel, H, W)
 
@@ -151,23 +160,29 @@ def iou_score(pred, target, threshold=0.5):
     union = pred.sum() + target.sum() - intersection
     return (intersection + smooth) / (union + smooth)
 
-def load_data():
+def load_data(args):
     target_img_path = "dataset/images/train/train_6.bmp"
 
     train_imgs = sorted(glob(os.path.join(DATA_DIR, "images/train/*.bmp")))
     train_masks = [p.replace("images", "masks").replace(".bmp", "_anno.bmp") for p in train_imgs]
-    train_set = GlandDataset(train_imgs, train_masks)
+    if args.rgb:
+        train_set = GlandDataset(train_imgs, train_masks, args, target_img_path)
+    else:
+        train_set = GlandDataset(train_imgs, train_masks, args)
     train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True)
 
     test_imgs = sorted(glob(os.path.join(DATA_DIR, "images/test/*.bmp")))
     test_masks = [p.replace("images", "masks").replace(".bmp", "_anno.bmp") for p in test_imgs]
-    test_set = GlandDataset(test_imgs, test_masks)
+    if args.rgb:
+        test_set = GlandDataset(test_imgs, test_masks, args, target_img_path)
+    else:
+        test_set = GlandDataset(test_imgs, test_masks, args)
     test_loader = DataLoader(test_set, batch_size=1, shuffle=False)
 
     return train_loader, test_loader, test_imgs
 
-def train(train_loader):
-    model = UNet().to(DEVICE)
+def train(train_loader, args):
+    model = UNet(args).to(DEVICE)
     criterion = nn.BCELoss()    # Binary Cross Entropy Loss
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
@@ -195,7 +210,7 @@ def train(train_loader):
     torch.save(model.state_dict(), "model/UNet.pth")
     return model
 
-def test(test_loader, test_imgs, model):
+def test(test_loader, test_imgs, model, args):
     model.eval()
     total_dice = 0.0
     total_iou = 0.0
@@ -216,7 +231,7 @@ def test(test_loader, test_imgs, model):
             os.makedirs(save_dir, exist_ok=True)
             pred_mask = (outputs[0].cpu().numpy()[0] * 255).astype(np.uint8)
             filename = os.path.basename(test_imgs[i])
-            cv2.imwrite(os.path.join(save_dir, filename.replace(".bmp", "_pred.bmp")), pred_mask)
+            cv2.imwrite(os.path.join(save_dir, filename.replace(".bmp", f"_{args.output_name}.bmp")), pred_mask)
 
     print(f"\nTest Set Dice Score: {total_dice / len(test_loader):.4f}")
     print(f"\nTest Set IoU Score: {total_iou / len(test_loader):.4f}")
@@ -224,7 +239,22 @@ def test(test_loader, test_imgs, model):
         f.write(f"\nTest Set Dice Score: {total_dice / len(test_loader):.4f}")
         f.write(f"\nTest Set IoU Score: {total_iou / len(test_loader):.4f}")
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="UNet!")
+    parser.add_argument('--ep', type=int, default=30)
+    parser.add_argument('--output_name', type=str, default='pred')
+    parser.add_argument('--rgb', action='store_true')       # use rgb img to train
+    parser.add_argument('--resize', action='store_true')    # resize + padding
+    # parser.add_argument('--test', action='store_true')      # test only
+    return parser.parse_args()
+
+def main():
+    args = parse_args()
+    global EPOCHS
+    EPOCHS = args.ep
+    train_loader, test_loader, test_imgs = load_data(args)
+    model = train(train_loader, args)
+    test(test_loader, test_imgs, model, args)
+
 if __name__ == "__main__":
-    train_loader, test_loader, test_imgs = load_data()
-    model = train(train_loader)
-    test(test_loader, test_imgs, model)
+    main()
