@@ -216,7 +216,7 @@ def test(test_loader, test_imgs, model):
             os.makedirs(save_dir, exist_ok=True)
             pred_mask = (outputs[0].cpu().numpy()[0] * 255).astype(np.uint8)
             filename = os.path.basename(test_imgs[i])
-            cv2.imwrite(os.path.join(save_dir, filename.replace(".bmp", "_tmp.bmp")), pred_mask)
+            cv2.imwrite(os.path.join(save_dir, filename.replace(".bmp", "_pred.bmp")), pred_mask)
 
     print(f"\nTest Set Dice Score: {total_dice / len(test_loader):.4f}")
     print(f"\nTest Set IoU Score: {total_iou / len(test_loader):.4f}")
