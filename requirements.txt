@@ -1,0 +1,9 @@
+opencv-python
+numpy
+tqdm
+staintools
+spams-bin
+
+torch
+torchvision
+torchaudio
