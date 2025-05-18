@@ -229,9 +229,15 @@ def test(test_loader, test_imgs, model, args):
             # visualize
             save_dir = "results"
             os.makedirs(save_dir, exist_ok=True)
-            pred_mask = (outputs[0].cpu().numpy()[0] * 255).astype(np.uint8)
             filename = os.path.basename(test_imgs[i])
-            cv2.imwrite(os.path.join(save_dir, filename.replace(".bmp", f"_{args.output_name}.bmp")), pred_mask)
+            ori_img = cv2.imread(test_imgs[i])  # BGR
+            ori_img = cv2.resize(ori_img, (IMAGE_SIZE, IMAGE_SIZE))
+            pred = outputs[0].cpu().numpy()[0]
+            pred_mask = (pred > 0.5).astype(np.uint8)
+            contours, _ = cv2.findContours(pred_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            overlay = ori_img.copy()
+            cv2.drawContours(overlay, contours, -1, (0, 255, 0), 1)
+            cv2.imwrite(os.path.join(save_dir, filename.replace(".bmp", f"_{args.output_name}.bmp")), overlay)
 
     print(f"\nTest Set Dice Score: {total_dice / len(test_loader):.4f}")
     print(f"\nTest Set IoU Score: {total_iou / len(test_loader):.4f}")
