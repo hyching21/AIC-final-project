@@ -171,8 +171,7 @@ def load_data(args):
 
     return train_loader, test_loader, test_imgs
 
-def train(train_loader, args):
-    model = UNet(args).to(DEVICE)
+def train(model, train_loader, args):
     criterion = nn.BCELoss()    # Binary Cross Entropy Loss
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
@@ -201,6 +200,8 @@ def train(train_loader, args):
     return model
 
 def test(test_loader, test_imgs, model, args):
+    if args.test != "none":
+        model.load_state_dict(torch.load(f"model/{args.test}", map_location=DEVICE))
     model.eval()
     total_dice = 0.0
     total_iou = 0.0
@@ -219,12 +220,18 @@ def test(test_loader, test_imgs, model, args):
             # visualize
             save_dir = "results"
             os.makedirs(save_dir, exist_ok=True)
-            pred_mask = (outputs[0].cpu().numpy()[0] * 255).astype(np.uint8)
             filename = os.path.basename(test_imgs[i])
-            cv2.imwrite(os.path.join(save_dir, filename.replace(".bmp", f"_{args.output_name}.bmp")), pred_mask)
+            ori_img = cv2.imread(test_imgs[i])  # BGR
+            ori_img = cv2.resize(ori_img, (IMAGE_SIZE, IMAGE_SIZE))
+            pred = outputs[0].cpu().numpy()[0]
+            pred_mask = (pred > 0.5).astype(np.uint8)
+            contours, _ = cv2.findContours(pred_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            overlay = ori_img.copy()
+            cv2.drawContours(overlay, contours, -1, (0, 255, 0), 1)
+            cv2.imwrite(os.path.join(save_dir, filename.replace(".bmp", f"_{args.output_name}.bmp")), overlay)
 
     print(f"\nTest Set Dice Score: {total_dice / len(test_loader):.4f}")
-    print(f"\nTest Set IoU Score: {total_iou / len(test_loader):.4f}")
+    print(f"Test Set IoU Score: {total_iou / len(test_loader):.4f}")
     with open("result.txt", 'a', encoding='utf-8') as f:
         f.write(f"\nTest Set Dice Score: {total_dice / len(test_loader):.4f}")
         f.write(f"\nTest Set IoU Score: {total_iou / len(test_loader):.4f}")
@@ -235,15 +242,20 @@ def parse_args():
     parser.add_argument('--output_name', type=str, default='pred')
     parser.add_argument('--rgb', action='store_true')       # use rgb img to train
     parser.add_argument('--resize', action='store_true')    # resize + padding
-    # parser.add_argument('--test', action='store_true')      # test only
+    parser.add_argument('--test', type=str, default="none")      # test only
     return parser.parse_args()
 
 def main():
     args = parse_args()
     global EPOCHS
     EPOCHS = args.ep
+
+    model = UNet(args).to(DEVICE)
     train_loader, test_loader, test_imgs = load_data(args)
-    model = train(train_loader, args)
+
+    if args.test == "none":
+        model = train(model, train_loader, args)
+
     test(test_loader, test_imgs, model, args)
 
 if __name__ == "__main__":

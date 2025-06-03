@@ -67,7 +67,7 @@ python unet.py
 輸出圖片會存到results/{image name}_pred.bmp，也可以用`--output_name <your_output_name>` 改成自己想要的名字，image name 是圖片原本的名字(testA_1.bmp, testB_1.bmp ...)
 > ex: `--output_name base`，則輸出名稱為`{image name}_base.bmp`
 
-[這裡](https://drive.google.com/drive/folders/1rVyESy9RzuWLcLJSpSTzRsND2tFs0J2E?usp=sharing)可以下載我之前train 好的模型(但我還沒辦法讓他可以直接load 存下來的model :(
+[這裡](https://drive.google.com/drive/folders/1rVyESy9RzuWLcLJSpSTzRsND2tFs0J2E?usp=sharing)可以下載我之前train 好的模型(但我不知道為什麼用同樣的模型跑出來Dice, IoU 都比之前差!?
 
 ## results
 ### 1. base (train 3 min, UNet_0511_base.pth)
