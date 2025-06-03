@@ -13,6 +13,8 @@ from tqdm import tqdm
 import staintools
 import argparse
 
+from utils import dice_score, iou_score
+
 IMAGE_SIZE = 256
 BATCH_SIZE = 8
 EPOCHS = 30
@@ -147,18 +149,6 @@ class GlandDataset(Dataset):
 
         return img, mask
 
-def dice_score(pred, target, threshold=0.5):
-    pred = (pred > threshold).float()
-    smooth = 1e-6
-    intersection = (pred * target).sum()
-    return (2. * intersection + smooth) / (pred.sum() + target.sum() + smooth)
-
-def iou_score(pred, target, threshold=0.5):
-    pred = (pred > threshold).float()
-    smooth = 1e-6
-    intersection = (pred * target).sum()
-    union = pred.sum() + target.sum() - intersection
-    return (intersection + smooth) / (union + smooth)
 
 def load_data(args):
     target_img_path = "dataset/images/train/train_6.bmp"
