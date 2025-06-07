@@ -165,9 +165,11 @@ def test(test_loader, test_imgs, model, args):
     print(f"Test Set HD95 Score: {total_hd95 / len(test_loader):.4f}")
     print(f"Test Set ASSD Score: {total_assd / len(test_loader):.4f}")
     with open("result.txt", 'a', encoding='utf-8') as f:
-        f.write(f"Test Set Dice Score: {total_dice / len(test_loader):.4f}")
+        f.write(f"\n\n-----------------------------------------\n")
+        f.write(f"\nTest Set Dice Score: {total_dice / len(test_loader):.4f}")
         f.write(f"\nTest Set IoU Score: {total_iou / len(test_loader):.4f}")
         f.write(f"\nTest Set HD Score: {total_hd / len(test_loader):.4f}")
+        f.write(f"\nTest Set HD95 Score: {total_hd95 / len(test_loader):.4f}")
         f.write(f"\nTest Set ASSD Score: {total_assd / len(test_loader):.4f}")
 
 def parse_args():
