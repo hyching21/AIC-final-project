@@ -89,11 +89,24 @@ def load_data(args):
     return train_loader, test_loader, test_imgs
 
 
+class DiceLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+    
+    def forward(self, pred, target):
+        pred = pred.view(-1)
+        target = target.view(-1)
+        smooth = 1e-6
+        intersection = (pred * target).sum()
+        dice = (2.*intersection + smooth) / (pred.sum() + target.sum() + smooth)
+        return 1 - dice
+
 def train(model, train_loader, args):
-    criterion = nn.BCELoss()    # Binary Cross Entropy Loss
+    bce_loss = nn.BCELoss()    # Binary Cross Entropy Loss
+    dice_loss = DiceLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
-    with open("result.txt", 'w', encoding='utf-8') as f:
+    with open(f"result_{args.output_name}.txt", 'w', encoding='utf-8') as f:
         for epoch in tqdm(range(EPOCHS)):
             model.train()
             epoch_loss = 0.0
@@ -103,7 +116,9 @@ def train(model, train_loader, args):
                 masks = masks.to(DEVICE)
 
                 outputs = model(images)
-                loss = criterion(outputs, masks)
+                bce = bce_loss(outputs, masks)
+                dice = dice_loss(outputs, masks)
+                loss = 0.7 * dice + 0.3 * bce
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -113,9 +128,27 @@ def train(model, train_loader, args):
 
             f.write(f"Epoch [{epoch+1}/{EPOCHS}], Loss: {epoch_loss:.4f}\n")
 
-    torch.save(model.state_dict(), "model/UNet.pth")
+    torch.save(model.state_dict(), f"model/UNet_{args.output_name}.pth")
     return model
 
+'''
+TTA: Test-Time Augmentation
+在testing 的時候產生一些augmented image
+把這些圖片都拿去做預測
+最終的預測 = 這些augmented image 的預測的平均
+'''
+def tta(model, image):
+    flips = [lambda x: x,                               # ori img
+             lambda x: torch.flip(x, dims=[-1]),        # flip W
+             lambda x: torch.flip(x, dims=[-2]),        # flip H
+             lambda x: torch.flip(x, dims=[-1, -2])]    # flip H & W
+    preds = []
+    for flip in flips:
+        img = flip(image)
+        out = model(img)
+        out = flip(out)
+        preds.append(out)
+    return torch.stack(preds).mean(dim=0)   # pred = avg of all flips
 
 def test(test_loader, test_imgs, model, args):
     if args.test != "none":
@@ -131,7 +164,10 @@ def test(test_loader, test_imgs, model, args):
             images = images.to(DEVICE)
             masks = masks.to(DEVICE)
 
-            outputs = model(images)
+            if args.tta:
+                outputs = tta(model, images)        # use TTA
+            else:
+                outputs = model(images)
             dice = dice_score(outputs, masks)
             iou = iou_score(outputs, masks)
             hd, hd95 = hd_score(outputs, masks)
@@ -164,7 +200,7 @@ def test(test_loader, test_imgs, model, args):
     print(f"Test Set HD Score: {total_hd / len(test_loader):.4f}")
     print(f"Test Set HD95 Score: {total_hd95 / len(test_loader):.4f}")
     print(f"Test Set ASSD Score: {total_assd / len(test_loader):.4f}")
-    with open("result.txt", 'a', encoding='utf-8') as f:
+    with open(f"result_{args.output_name}.txt", 'a', encoding='utf-8') as f:
         f.write(f"\n\n-----------------------------------------\n")
         f.write(f"\nTest Set Dice Score: {total_dice / len(test_loader):.4f}")
         f.write(f"\nTest Set IoU Score: {total_iou / len(test_loader):.4f}")
@@ -178,6 +214,7 @@ def parse_args():
     parser.add_argument('--output_name', type=str, default='pred')
     parser.add_argument('--rgb', action='store_true')       # use rgb img to train
     parser.add_argument('--resize', action='store_true')    # resize + padding
+    parser.add_argument('--tta', action='store_true')       # use TTA when testing
     parser.add_argument('--test', type=str, default="none")      # test only
     return parser.parse_args()
 
