@@ -1,5 +1,7 @@
+/__pycache__/
 /dataset/
-/model/*
+/model/
 /results/
 
 result.txt
+my_note.md
