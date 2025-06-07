@@ -12,7 +12,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 import argparse
 
-from utils import dice_score, iou_score, GlandDataset
+from utils import dice_score, iou_score, hd_score, assd_score, GlandDataset
 
 IMAGE_SIZE = 256
 BATCH_SIZE = 8
@@ -87,6 +87,7 @@ def load_data(args):
 
     return train_loader, test_loader, test_imgs
 
+
 def train(model, train_loader, args):
     criterion = nn.BCELoss()    # Binary Cross Entropy Loss
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
@@ -115,12 +116,16 @@ def train(model, train_loader, args):
     torch.save(model.state_dict(), "model/UNet.pth")
     return model
 
+
 def test(test_loader, test_imgs, model, args):
     if args.test != "none":
         model.load_state_dict(torch.load(f"model/{args.test}", map_location=DEVICE))
     model.eval()
     total_dice = 0.0
     total_iou = 0.0
+    total_hd = 0.0
+    total_hd95 = 0.0
+    total_assd = 0.0
     with torch.no_grad():
         for i, (images, masks) in enumerate(test_loader):
             images = images.to(DEVICE)
@@ -129,9 +134,14 @@ def test(test_loader, test_imgs, model, args):
             outputs = model(images)
             dice = dice_score(outputs, masks)
             iou = iou_score(outputs, masks)
+            hd, hd95 = hd_score(outputs, masks)
+            assd = assd_score(outputs, masks)
 
             total_dice += dice.item()
             total_iou += iou.item()
+            total_hd += hd
+            total_hd95 += hd95
+            total_assd += assd
 
             # visualize
             save_dir = "results"
@@ -148,9 +158,14 @@ def test(test_loader, test_imgs, model, args):
 
     print(f"\nTest Set Dice Score: {total_dice / len(test_loader):.4f}")
     print(f"Test Set IoU Score: {total_iou / len(test_loader):.4f}")
+    print(f"Test Set HD Score: {total_hd / len(test_loader):.4f}")
+    print(f"Test Set HD95 Score: {total_hd95 / len(test_loader):.4f}")
+    print(f"Test Set ASSD Score: {total_assd / len(test_loader):.4f}")
     with open("result.txt", 'a', encoding='utf-8') as f:
-        f.write(f"\nTest Set Dice Score: {total_dice / len(test_loader):.4f}")
+        f.write(f"Test Set Dice Score: {total_dice / len(test_loader):.4f}")
         f.write(f"\nTest Set IoU Score: {total_iou / len(test_loader):.4f}")
+        f.write(f"\nTest Set HD Score: {total_hd / len(test_loader):.4f}")
+        f.write(f"\nTest Set ASSD Score: {total_assd / len(test_loader):.4f}")
 
 def parse_args():
     parser = argparse.ArgumentParser(description="UNet!")

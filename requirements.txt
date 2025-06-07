@@ -3,6 +3,7 @@ numpy
 tqdm
 staintools
 spams-bin
+medpy
 
 torch
 torchvision

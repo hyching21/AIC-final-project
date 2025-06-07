@@ -5,8 +5,7 @@ import torch
 from torch.utils.data import Dataset
 import torchvision.transforms as transforms
 import staintools
-
-
+from medpy.metric.binary import hd, assd, hd95
 
 IMAGE_SIZE = 256
 
@@ -31,7 +30,6 @@ def resize_img(img, target_size=(IMAGE_SIZE, IMAGE_SIZE), is_mask=False):
     img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
 
     return img
-
 
 
 class GlandDataset(Dataset):
@@ -97,6 +95,7 @@ class GlandDataset(Dataset):
 
 
 def dice_score(pred, target, threshold=0.5):
+    # equivalent to F1 score
     pred = (pred > threshold).float()
     smooth = 1e-6
     intersection = (pred * target).sum()
@@ -108,3 +107,32 @@ def iou_score(pred, target, threshold=0.5):
     intersection = (pred * target).sum()
     union = pred.sum() + target.sum() - intersection
     return (intersection + smooth) / (union + smooth)
+
+def hd_score(pred, target, voxelspacing=None, threshold=0.5):
+    # voxelspacing: spacing of voxels (tuple or None)
+    pred = (pred > threshold).float()
+    
+    if isinstance(pred, torch.Tensor):
+        pred = pred.cpu().numpy()
+    if isinstance(target, torch.Tensor):
+        target = target.cpu().numpy()
+    
+    # Ensure binary masks
+    pred = pred.astype(bool)
+    target = target.astype(bool)
+    
+    return hd(pred, target, voxelspacing=voxelspacing), hd95(pred, target, voxelspacing=voxelspacing)
+
+def assd_score(pred, target, voxelspacing=None, threshold=0.5):
+    pred = (pred > threshold).float()
+    
+    if isinstance(pred, torch.Tensor):
+        pred = pred.cpu().numpy()
+    if isinstance(target, torch.Tensor):
+        target = target.cpu().numpy()
+    
+    # Ensure binary masks
+    pred = pred.astype(bool)
+    target = target.astype(bool)
+    
+    return assd(pred, target, voxelspacing=voxelspacing)
