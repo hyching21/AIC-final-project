@@ -6,14 +6,14 @@ from glob import glob
 from sklearn.model_selection import train_test_split
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 import torch.nn.functional as F
 from tqdm import tqdm
-import staintools
 import argparse
 
-from utils import dice_score, iou_score
+from utils import dice_score, iou_score, hd_score, assd_score
+from utils import GlandDataset, resize_img
 
 IMAGE_SIZE = 256
 BATCH_SIZE = 8
@@ -66,89 +66,6 @@ class UNet(nn.Module):
         d1 = self.dec1(torch.cat([self.upconv1(d2), e1], dim=1))
         return torch.sigmoid(self.conv_out(d1))
 
-def reisze_img(img, target_size=(IMAGE_SIZE, IMAGE_SIZE), is_mask=False):
-    # shorter edge resize to 256
-    h, w = img.shape[:2]
-    scale = min(target_size[0] / h, target_size[1] / w)
-    new_h, new_w = int(h * scale), int(w * scale)
-    interp = cv2.INTER_NEAREST if is_mask else cv2.INTER_AREA
-    img = cv2.resize(img, (new_w, new_h), interpolation=interp)
-
-    # padding
-    delta_w = target_size[1] - new_w
-    delta_h = target_size[0] - new_h
-    top, bottom = delta_h // 2, delta_h - delta_h // 2
-    left, right = delta_w // 2, delta_w - delta_w // 2
-
-    if img.ndim == 3:
-        color = [0, 0, 0]
-    else:
-        color = 0
-    img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
-
-    return img
-
-class GlandDataset(Dataset):
-    def __init__(self, img_paths, mask_paths, args, target_img_path=None, transform=None):
-        self.img_paths = img_paths
-        self.mask_paths = mask_paths
-        self.macenko = (target_img_path is not None)
-        self.args = args
-
-        # stain normalizer
-        if self.macenko:
-            # self.transform = transform
-            self.normalizer = staintools.StainNormalizer(method='macenko')
-
-            target = cv2.imread(target_img_path)
-            target = cv2.cvtColor(target, cv2.COLOR_BGR2RGB)
-            target = np.clip(target, 0, 255).astype(np.uint8)
-            target = staintools.LuminosityStandardizer.standardize(target)
-            self.normalizer.fit(target)
-
-    def __len__(self):
-        return len(self.img_paths)
-
-    def __getitem__(self, idx):
-        # read img as rgb
-        if self.macenko:
-            img = cv2.imread(self.img_paths[idx])
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            img = staintools.LuminosityStandardizer.standardize(img)
-            img = self.normalizer.transform(img)
-            if self.args.resize:
-                img = reisze_img(img, is_mask=False)
-            else:
-                img = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
-            img = transforms.ToTensor()(img)
-
-            mask = cv2.imread(self.mask_paths[idx], cv2.IMREAD_GRAYSCALE)
-            if self.args.resize:
-                mask = reisze_img(mask, is_mask=True)
-            else:
-                mask = cv2.resize(mask, (IMAGE_SIZE, IMAGE_SIZE))
-            mask = (mask > 0).astype(np.float32)
-            mask = torch.tensor(mask).unsqueeze(0)  # (1, H, W) to fit (channel, H, W)
-
-        # read img as gray scale
-        else:
-            img = cv2.imread(self.img_paths[idx], cv2.IMREAD_GRAYSCALE)
-            if self.args.resize:
-                img = reisze_img(img, is_mask=False)
-            else:
-                img = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
-            img = transforms.ToTensor()(img)
-            
-            mask = cv2.imread(self.mask_paths[idx], cv2.IMREAD_GRAYSCALE)
-            if self.args.resize:
-                mask = reisze_img(mask, is_mask=True)
-            else:
-                mask = cv2.resize(mask, (IMAGE_SIZE, IMAGE_SIZE))
-            mask = (mask > 0).astype(np.float32)
-            mask = torch.tensor(mask).unsqueeze(0)  # (1, H, W) to fit (channel, H, W)
-
-        return img, mask
-
 
 def load_data(args):
     target_img_path = "dataset/images/train/train_6.bmp"
@@ -170,6 +87,7 @@ def load_data(args):
     test_loader = DataLoader(test_set, batch_size=1, shuffle=False)
 
     return train_loader, test_loader, test_imgs
+
 
 def train(model, train_loader, args):
     criterion = nn.BCELoss()    # Binary Cross Entropy Loss
@@ -193,11 +111,11 @@ def train(model, train_loader, args):
 
                 epoch_loss += loss.item()
 
-            # print(f"Epoch [{epoch+1}/{EPOCHS}], Loss: {epoch_loss:.4f}")
             f.write(f"Epoch [{epoch+1}/{EPOCHS}], Loss: {epoch_loss:.4f}\n")
 
     torch.save(model.state_dict(), "model/UNet.pth")
     return model
+
 
 def test(test_loader, test_imgs, model, args):
     if args.test != "none":
@@ -205,6 +123,9 @@ def test(test_loader, test_imgs, model, args):
     model.eval()
     total_dice = 0.0
     total_iou = 0.0
+    total_hd = 0.0
+    total_hd95 = 0.0
+    total_assd = 0.0
     with torch.no_grad():
         for i, (images, masks) in enumerate(test_loader):
             images = images.to(DEVICE)
@@ -213,16 +134,24 @@ def test(test_loader, test_imgs, model, args):
             outputs = model(images)
             dice = dice_score(outputs, masks)
             iou = iou_score(outputs, masks)
+            hd, hd95 = hd_score(outputs, masks)
+            assd = assd_score(outputs, masks)
 
             total_dice += dice.item()
             total_iou += iou.item()
+            total_hd += hd
+            total_hd95 += hd95
+            total_assd += assd
 
             # visualize
             save_dir = "results"
             os.makedirs(save_dir, exist_ok=True)
             filename = os.path.basename(test_imgs[i])
             ori_img = cv2.imread(test_imgs[i])  # BGR
-            ori_img = cv2.resize(ori_img, (IMAGE_SIZE, IMAGE_SIZE))
+            if args.resize:
+                ori_img = resize_img(ori_img, is_mask=False)
+            else:
+                ori_img = cv2.resize(ori_img, (IMAGE_SIZE, IMAGE_SIZE))
             pred = outputs[0].cpu().numpy()[0]
             pred_mask = (pred > 0.5).astype(np.uint8)
             contours, _ = cv2.findContours(pred_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -232,9 +161,16 @@ def test(test_loader, test_imgs, model, args):
 
     print(f"\nTest Set Dice Score: {total_dice / len(test_loader):.4f}")
     print(f"Test Set IoU Score: {total_iou / len(test_loader):.4f}")
+    print(f"Test Set HD Score: {total_hd / len(test_loader):.4f}")
+    print(f"Test Set HD95 Score: {total_hd95 / len(test_loader):.4f}")
+    print(f"Test Set ASSD Score: {total_assd / len(test_loader):.4f}")
     with open("result.txt", 'a', encoding='utf-8') as f:
+        f.write(f"\n\n-----------------------------------------\n")
         f.write(f"\nTest Set Dice Score: {total_dice / len(test_loader):.4f}")
         f.write(f"\nTest Set IoU Score: {total_iou / len(test_loader):.4f}")
+        f.write(f"\nTest Set HD Score: {total_hd / len(test_loader):.4f}")
+        f.write(f"\nTest Set HD95 Score: {total_hd95 / len(test_loader):.4f}")
+        f.write(f"\nTest Set ASSD Score: {total_assd / len(test_loader):.4f}")
 
 def parse_args():
     parser = argparse.ArgumentParser(description="UNet!")
