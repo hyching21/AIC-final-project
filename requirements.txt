@@ -8,3 +8,5 @@ medpy
 torch
 torchvision
 torchaudio
+
+albumentations

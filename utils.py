@@ -5,6 +5,8 @@ import torch
 from torch.utils.data import Dataset
 import torchvision.transforms as transforms
 import staintools
+import albumentations as A
+from albumentations import ToTensorV2
 from medpy.metric.binary import hd, assd, hd95
 
 IMAGE_SIZE = 256
@@ -33,7 +35,7 @@ def resize_img(img, target_size=(IMAGE_SIZE, IMAGE_SIZE), is_mask=False):
 
 
 class GlandDataset(Dataset):
-    def __init__(self, img_paths, mask_paths, args, target_img_path=None, transform=None):
+    def __init__(self, img_paths, mask_paths, args, target_img_path=None, is_train=True):
         self.img_paths = img_paths
         self.mask_paths = mask_paths
         self.macenko = (target_img_path is not None)
@@ -41,7 +43,6 @@ class GlandDataset(Dataset):
 
         # stain normalizer
         if self.macenko:
-            # self.transform = transform
             self.normalizer = staintools.StainNormalizer(method='macenko')
 
             target = cv2.imread(target_img_path)
@@ -50,47 +51,52 @@ class GlandDataset(Dataset):
             target = staintools.LuminosityStandardizer.standardize(target)
             self.normalizer.fit(target)
 
+        # data augmentation pipeline
+        if args.rgb:
+            normalize_val = (0.5, 0.5, 0.5)
+        else:
+            normalize_val = (0.5,)
+
+        self.transform = A.Compose([
+            A.HorizontalFlip(p=0.5),
+            A.Rotate(limit=15, p=0.5),
+            A.RandomBrightnessContrast(p=0.3),
+            A.ElasticTransform(p=0.2),
+            A.Normalize(mean=normalize_val, std=normalize_val),
+            ToTensorV2()
+        ]) if is_train else A.Compose([
+            A.Normalize(mean=normalize_val, std=normalize_val),
+            ToTensorV2()
+        ])
+
     def __len__(self):
         return len(self.img_paths)
 
     def __getitem__(self, idx):
-        # read img as rgb
-        if self.macenko:
-            img = cv2.imread(self.img_paths[idx])
+        # read img & mask
+        img = cv2.imread(self.img_paths[idx])
+        mask = cv2.imread(self.mask_paths[idx], cv2.IMREAD_GRAYSCALE)
+        if self.args.rgb:
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            img = staintools.LuminosityStandardizer.standardize(img)
-            img = self.normalizer.transform(img)
-            if self.args.resize:
-                img = resize_img(img, is_mask=False)
-            else:
-                img = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
-            img = transforms.ToTensor()(img)
-
-            mask = cv2.imread(self.mask_paths[idx], cv2.IMREAD_GRAYSCALE)
-            if self.args.resize:
-                mask = resize_img(mask, is_mask=True)
-            else:
-                mask = cv2.resize(mask, (IMAGE_SIZE, IMAGE_SIZE))
-            mask = (mask > 0).astype(np.float32)
-            mask = torch.tensor(mask).unsqueeze(0)  # (1, H, W) to fit (channel, H, W)
-
-        # read img as gray scale
+            if self.macenko:
+                img = staintools.LuminosityStandardizer.standardize(img)
+                img = self.normalizer.transform(img)
         else:
-            img = cv2.imread(self.img_paths[idx], cv2.IMREAD_GRAYSCALE)
-            if self.args.resize:
-                img = resize_img(img, is_mask=False)
-            else:
-                img = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
-            img = transforms.ToTensor()(img)
-            
-            mask = cv2.imread(self.mask_paths[idx], cv2.IMREAD_GRAYSCALE)
-            if self.args.resize:
-                mask = resize_img(mask, is_mask=True)
-            else:
-                mask = cv2.resize(mask, (IMAGE_SIZE, IMAGE_SIZE))
-            mask = (mask > 0).astype(np.float32)
-            mask = torch.tensor(mask).unsqueeze(0)  # (1, H, W) to fit (channel, H, W)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            img = np.expand_dims(img, axis=2)   # (H, W) to (H, W, C)
 
+        # resize
+        if self.args.resize:
+            img = resize_img(img, is_mask=False)
+            mask = resize_img(mask, is_mask=True)
+        else:
+            img = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
+            mask = cv2.resize(mask, (IMAGE_SIZE, IMAGE_SIZE))
+
+        # data augmentation
+        augmented = self.transform(image=img, mask=mask)
+        img = augmented['image']
+        mask = (augmented['mask'] > 0).float().unsqueeze(0)
         return img, mask
 
 
