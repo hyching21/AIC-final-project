@@ -12,7 +12,8 @@ import torch.nn.functional as F
 from tqdm import tqdm
 import argparse
 
-from utils import dice_score, iou_score, hd_score, assd_score, GlandDataset
+from utils import dice_score, iou_score, hd_score, assd_score
+from utils import GlandDataset, resize_img
 
 IMAGE_SIZE = 256
 BATCH_SIZE = 8
@@ -110,7 +111,6 @@ def train(model, train_loader, args):
 
                 epoch_loss += loss.item()
 
-            # print(f"Epoch [{epoch+1}/{EPOCHS}], Loss: {epoch_loss:.4f}")
             f.write(f"Epoch [{epoch+1}/{EPOCHS}], Loss: {epoch_loss:.4f}\n")
 
     torch.save(model.state_dict(), "model/UNet.pth")
@@ -148,7 +148,10 @@ def test(test_loader, test_imgs, model, args):
             os.makedirs(save_dir, exist_ok=True)
             filename = os.path.basename(test_imgs[i])
             ori_img = cv2.imread(test_imgs[i])  # BGR
-            ori_img = cv2.resize(ori_img, (IMAGE_SIZE, IMAGE_SIZE))
+            if args.resize:
+                ori_img = resize_img(ori_img, is_mask=False)
+            else:
+                ori_img = cv2.resize(ori_img, (IMAGE_SIZE, IMAGE_SIZE))
             pred = outputs[0].cpu().numpy()[0]
             pred_mask = (pred > 0.5).astype(np.uint8)
             contours, _ = cv2.findContours(pred_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)

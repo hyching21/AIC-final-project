@@ -67,7 +67,7 @@ python unet.py
 輸出圖片會存到results/{image name}_pred.bmp，也可以用`--output_name <your_output_name>` 改成自己想要的名字，image name 是圖片原本的名字(testA_1.bmp, testB_1.bmp ...)
 > ex: `--output_name base`，則輸出名稱為`{image name}_base.bmp`
 
-[這裡](https://drive.google.com/drive/folders/1rVyESy9RzuWLcLJSpSTzRsND2tFs0J2E?usp=sharing)可以下載我之前train 好的模型(但我不知道為什麼用同樣的模型跑出來Dice, IoU 都比之前差!?
+[這裡](https://drive.google.com/drive/folders/1rVyESy9RzuWLcLJSpSTzRsND2tFs0J2E?usp=sharing)可以下載我之前train 好的模型
 
 ## results
 ### 1. base (train 3 min, UNet_0511_base.pth)
@@ -140,10 +140,6 @@ dice: 0.8531, IoU: 0.7571, last training loss: 0.0600 (好像沒有很好?)<br>
 </p>
 
 ## TODO
-- 修正圖片輸出
-    > 現在的輸出圖片是類似灰階mask，只有用黑白表示，希望可以是輸出原本的彩色圖片，用線框出有問題的區域
-- 用其他模型做預測
-    > DCAN?
 - 更多實驗
     > try different ep, lr.<br>
     > different color normalization method: vahadane
