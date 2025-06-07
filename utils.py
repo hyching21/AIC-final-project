@@ -59,7 +59,7 @@ class GlandDataset(Dataset):
 
         self.transform = A.Compose([
             A.HorizontalFlip(p=0.5),
-            A.Rotate(limit=15, p=0.5),
+            # A.Rotate(limit=15, p=0.5),
             A.RandomBrightnessContrast(p=0.3),
             A.ElasticTransform(p=0.2),
             A.Normalize(mean=normalize_val, std=normalize_val),
