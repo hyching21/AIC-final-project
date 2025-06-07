@@ -1,5 +1,24 @@
+
 import torch
 import torch.nn as nn
+import argparse
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+import cv2
+import numpy as np
+import os
+
+from utils import dice_score, iou_score, hd_score, assd_score
+from utils import GlandDataset, resize_img
+from unet import load_data
+
+
+IMAGE_SIZE = 256
+BATCH_SIZE = 8
+EPOCHS = 30
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DATA_DIR = "dataset"
+
 
 class DCAN(nn.Module):
     def __init__(self, args):
@@ -70,11 +89,147 @@ class DCAN(nn.Module):
 
         return out_obj, out_contour
 
-# Example usage
-class Args:
-    rgb = False
 
-model = DCAN(Args())
-x = torch.randn((1, 1, 256, 256))
-out_obj, out_contour = model(x)
-print("Output shapes:", out_obj.shape, out_contour.shape)
+def create_contour_mask(mask):
+    if isinstance(mask, torch.Tensor):
+        mask = mask.cpu().numpy()
+
+    mask = mask.astype(bool)
+
+    mask = (mask * 255).astype(np.uint8)    
+    # Find contours
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    contour_mask = np.zeros_like(mask)
+    cv2.drawContours(contour_mask, contours, -1, color=255, thickness=1)
+    
+    contour_mask = (contour_mask > 0).astype(np.uint8)
+    contour_mask = torch.from_numpy(contour_mask).unsqueeze(0).float()
+    
+    return contour_mask
+
+
+def train(model, train_loader, args):
+    criterion = nn.BCELoss()    # Binary Cross Entropy Loss
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+
+    with open("result_dcan.txt", 'w', encoding='utf-8') as f:
+        for epoch in tqdm(range(EPOCHS)):
+            model.train()
+            epoch_loss = 0.0
+
+            for images, masks in train_loader:
+                images = images.to(DEVICE)
+                masks = masks.to(DEVICE)
+                
+                contour_masks = []
+                for i in range(masks.shape[0]):
+                    contour = create_contour_mask(masks[i, 0])
+                    contour_masks.append(contour)
+                
+                contour_masks = torch.stack(contour_masks).to(DEVICE).float()  # batch tensor (B, 1, H, W)
+
+                outputs_obj, outputs_contour = model(images)
+
+                loss_obj = criterion(outputs_obj, masks)
+                loss_contour = criterion(outputs_contour, contour_masks)
+                loss = loss_obj + loss_contour
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                epoch_loss += loss.item()
+
+            f.write(f"Epoch [{epoch+1}/{EPOCHS}], Loss: {epoch_loss:.4f}\n")
+
+    torch.save(model.state_dict(), "model/DCAN.pth")
+    return model
+
+
+def test(test_loader, test_imgs, model, args):
+    if args.test != "none":
+        model.load_state_dict(torch.load(f"model/{args.test}", map_location=DEVICE))
+    model.eval()
+    total_dice = 0.0
+    total_iou = 0.0
+    total_hd = 0.0
+    total_hd95 = 0.0
+    total_assd = 0.0
+    with torch.no_grad():
+        for i, (images, masks) in enumerate(test_loader):
+            images = images.to(DEVICE)
+            masks = masks.to(DEVICE)
+
+            outputs, _ = model(images)
+            dice = dice_score(outputs, masks)
+            iou = iou_score(outputs, masks)
+            hd, hd95 = hd_score(outputs, masks)
+            assd = assd_score(outputs, masks)
+
+            total_dice += dice.item()
+            total_iou += iou.item()
+            total_hd += hd
+            total_hd95 += hd95
+            total_assd += assd
+
+            # visualize
+            save_dir = "results"
+            os.makedirs(save_dir, exist_ok=True)
+            filename = os.path.basename(test_imgs[i])
+            ori_img = cv2.imread(test_imgs[i])  # BGR
+            if args.resize:
+                ori_img = resize_img(ori_img, is_mask=False)
+            else:
+                ori_img = cv2.resize(ori_img, (IMAGE_SIZE, IMAGE_SIZE))
+            pred = outputs[0].cpu().numpy()[0]
+            pred_mask = (pred > 0.5).astype(np.uint8)
+            contours, _ = cv2.findContours(pred_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            overlay = ori_img.copy()
+            cv2.drawContours(overlay, contours, -1, (0, 255, 0), 1)
+            cv2.imwrite(os.path.join(save_dir, filename.replace(".bmp", f"_{args.output_name}.bmp")), overlay)
+
+
+    print(f"\nTest Set Dice Score: {total_dice / len(test_loader):.4f}")
+    print(f"Test Set IoU Score: {total_iou / len(test_loader):.4f}")
+    print(f"Test Set HD Score: {total_hd / len(test_loader):.4f}")
+    print(f"Test Set HD95 Score: {total_hd95 / len(test_loader):.4f}")
+    print(f"Test Set ASSD Score: {total_assd / len(test_loader):.4f}")
+    with open("result_dcan.txt", 'a', encoding='utf-8') as f:
+        f.write(f"\n\n-----------------------------------------\n")
+        f.write(f"\nTest Set Dice Score: {total_dice / len(test_loader):.4f}")
+        f.write(f"\nTest Set IoU Score: {total_iou / len(test_loader):.4f}")
+        f.write(f"\nTest Set HD Score: {total_hd / len(test_loader):.4f}")
+        f.write(f"\nTest Set HD95 Score: {total_hd95 / len(test_loader):.4f}")
+        f.write(f"\nTest Set ASSD Score: {total_assd / len(test_loader):.4f}")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="UNet!")
+    parser.add_argument('--ep', type=int, default=30)
+    parser.add_argument('--output_name', type=str, default='pred')
+    parser.add_argument('--rgb', action='store_true')       # use rgb img to train
+    parser.add_argument('--resize', action='store_true')    # resize + padding
+    parser.add_argument('--test', type=str, default="none")      # test only
+    return parser.parse_args()
+
+
+
+def main():
+    args = parse_args()
+    global EPOCHS
+    EPOCHS = args.ep
+
+    model = DCAN(args).to(DEVICE)
+    train_loader, test_loader, test_imgs = load_data(args)
+
+    if args.test == "none":
+        model = train(model, train_loader, args)
+
+    test(test_loader, test_imgs, model, args)
+
+
+
+if __name__ == "__main__":
+    main()
+
