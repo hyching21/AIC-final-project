@@ -133,7 +133,9 @@ def train(model, train_loader, args):
 
                 loss_obj = criterion(outputs_obj, masks)
                 loss_contour = criterion(outputs_contour, contour_masks)
-                loss = loss_obj + loss_contour
+                
+                lambda_contour = 0.5
+                loss = loss_obj + lambda_contour * loss_contour
 
                 optimizer.zero_grad()
                 loss.backward()
