@@ -35,12 +35,12 @@ def resize_img(img, target_size=(IMAGE_SIZE, IMAGE_SIZE), is_mask=False):
 
 
 class GlandDataset(Dataset):
-    def __init__(self, img_paths, mask_paths, args, target_img_path=None, is_train=True):
+    def __init__(self, img_paths, mask_paths, args, target_img_path=None, aug=True):
         self.img_paths = img_paths
         self.mask_paths = mask_paths
         self.macenko = (target_img_path is not None)
         self.args = args
-        self.is_train = is_train
+        self.aug = aug
 
         # stain normalizer
         if self.macenko:
@@ -58,7 +58,7 @@ class GlandDataset(Dataset):
         else:
             normalize_val = (0.5,)
 
-        if is_train:
+        if self.aug:
             self.transform = A.Compose([
                 A.HorizontalFlip(p=0.5),
                 # A.Rotate(limit=15, p=0.5),

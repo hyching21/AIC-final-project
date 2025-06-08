@@ -73,17 +73,17 @@ def load_data(args):
     train_imgs = sorted(glob(os.path.join(DATA_DIR, "images/train/*.bmp")))
     train_masks = [p.replace("images", "masks").replace(".bmp", "_anno.bmp") for p in train_imgs]
     if args.rgb:
-        train_set = GlandDataset(train_imgs, train_masks, args, target_img_path)
+        train_set = GlandDataset(train_imgs, train_masks, args, target_img_path, aug=True)
     else:
-        train_set = GlandDataset(train_imgs, train_masks, args)
+        train_set = GlandDataset(train_imgs, train_masks, args, aug=True)
     train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True)
 
     test_imgs = sorted(glob(os.path.join(DATA_DIR, "images/test/*.bmp")))
     test_masks = [p.replace("images", "masks").replace(".bmp", "_anno.bmp") for p in test_imgs]
     if args.rgb:
-        test_set = GlandDataset(test_imgs, test_masks, args, target_img_path, is_train=False)
+        test_set = GlandDataset(test_imgs, test_masks, args, target_img_path, aug=False)
     else:
-        test_set = GlandDataset(test_imgs, test_masks, args, is_train=False)
+        test_set = GlandDataset(test_imgs, test_masks, args, aug=False)
     test_loader = DataLoader(test_set, batch_size=1, shuffle=False)
 
     return train_loader, test_loader, test_imgs
