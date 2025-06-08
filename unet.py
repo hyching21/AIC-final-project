@@ -81,9 +81,9 @@ def load_data(args):
     test_imgs = sorted(glob(os.path.join(DATA_DIR, "images/test/*.bmp")))
     test_masks = [p.replace("images", "masks").replace(".bmp", "_anno.bmp") for p in test_imgs]
     if args.rgb:
-        test_set = GlandDataset(test_imgs, test_masks, args, target_img_path)
+        test_set = GlandDataset(test_imgs, test_masks, args, target_img_path, is_train=False)
     else:
-        test_set = GlandDataset(test_imgs, test_masks, args)
+        test_set = GlandDataset(test_imgs, test_masks, args, is_train=False)
     test_loader = DataLoader(test_set, batch_size=1, shuffle=False)
 
     return train_loader, test_loader, test_imgs
@@ -105,13 +105,13 @@ def train(model, train_loader, args):
     bce_loss = nn.BCELoss()    # Binary Cross Entropy Loss
     dice_loss = DiceLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    mn_loss = 10.0
 
     with open(f"result_{args.output_name}.txt", 'w', encoding='utf-8') as f:
         for epoch in tqdm(range(EPOCHS)):
             model.train()
             epoch_loss = 0.0
-            # for images, masks in tqdm(train_loader, desc=f"Epoch {epoch+1}/{EPOCHS}"):
-            for images, masks in train_loader:
+            for images, masks, _ in train_loader:
                 images = images.to(DEVICE)
                 masks = masks.to(DEVICE)
 
@@ -160,12 +160,13 @@ def test(test_loader, test_imgs, model, args):
     total_hd95 = 0.0
     total_assd = 0.0
     with torch.no_grad():
-        for i, (images, masks) in enumerate(test_loader):
+        for i, (images, masks, draw_img) in enumerate(test_loader):
             images = images.to(DEVICE)
             masks = masks.to(DEVICE)
+            draw_img = draw_img.to(DEVICE)
 
             if args.tta:
-                outputs = tta(model, images)        # use TTA
+                outputs = tta(model, images)    # use TTA
             else:
                 outputs = model(images)
             dice = dice_score(outputs, masks)
@@ -180,20 +181,18 @@ def test(test_loader, test_imgs, model, args):
             total_assd += assd
 
             # visualize
-            save_dir = "results"
-            os.makedirs(save_dir, exist_ok=True)
-            filename = os.path.basename(test_imgs[i])
-            ori_img = cv2.imread(test_imgs[i])  # BGR
-            if args.resize:
-                ori_img = resize_img(ori_img, is_mask=False)
-            else:
-                ori_img = cv2.resize(ori_img, (IMAGE_SIZE, IMAGE_SIZE))
-            pred = outputs[0].cpu().numpy()[0]
-            pred_mask = (pred > 0.5).astype(np.uint8)
-            contours, _ = cv2.findContours(pred_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            overlay = ori_img.copy()
-            cv2.drawContours(overlay, contours, -1, (0, 255, 0), 1)
-            cv2.imwrite(os.path.join(save_dir, filename.replace(".bmp", f"_{args.output_name}.bmp")), overlay)
+            if args.visualize:
+                save_dir = "results"
+                os.makedirs(save_dir, exist_ok=True)
+                filename = os.path.basename(test_imgs[i])
+                ori_img = draw_img[0].cpu().numpy()
+
+                pred = outputs[0].cpu().numpy()[0]
+                pred_mask = (pred > 0.5).astype(np.uint8)
+                contours, _ = cv2.findContours(pred_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                overlay = ori_img.copy()
+                cv2.drawContours(overlay, contours, -1, (0, 255, 0), 1)
+                cv2.imwrite(os.path.join(save_dir, filename.replace(".bmp", f"_{args.output_name}.bmp")), overlay)
 
     print(f"\nTest Set Dice Score: {total_dice / len(test_loader):.4f}")
     print(f"Test Set IoU Score: {total_iou / len(test_loader):.4f}")
@@ -215,6 +214,7 @@ def parse_args():
     parser.add_argument('--rgb', action='store_true')       # use rgb img to train
     parser.add_argument('--resize', action='store_true')    # resize + padding
     parser.add_argument('--tta', action='store_true')       # use TTA when testing
+    parser.add_argument('--visualize', action='store_true')      # draw image
     parser.add_argument('--test', type=str, default="none")      # test only
     return parser.parse_args()
 
