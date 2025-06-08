@@ -118,7 +118,7 @@ def train(model, train_loader, args):
             model.train()
             epoch_loss = 0.0
 
-            for images, masks in train_loader:
+            for images, masks, _ in train_loader:
                 images = images.to(DEVICE)
                 masks = masks.to(DEVICE)
                 
@@ -148,6 +148,18 @@ def train(model, train_loader, args):
     torch.save(model.state_dict(), "model/DCAN.pth")
     return model
 
+def tta(model, image):
+    flips = [lambda x: x,                               # ori img
+             lambda x: torch.flip(x, dims=[-1]),        # flip W
+             lambda x: torch.flip(x, dims=[-2]),        # flip H
+             lambda x: torch.flip(x, dims=[-1, -2])]    # flip H & W
+    preds = []
+    for flip in flips:
+        img = flip(image)
+        out, _ = model(img)
+        out = flip(out)
+        preds.append(out)
+    return torch.stack(preds).mean(dim=0)   # pred = avg of all flips
 
 def test(test_loader, test_imgs, model, args):
     if args.test != "none":
@@ -159,11 +171,15 @@ def test(test_loader, test_imgs, model, args):
     total_hd95 = 0.0
     total_assd = 0.0
     with torch.no_grad():
-        for i, (images, masks) in enumerate(test_loader):
+        for i, (images, masks, draw_img) in enumerate(test_loader):
             images = images.to(DEVICE)
             masks = masks.to(DEVICE)
+            draw_img = draw_img.to(DEVICE)
 
-            outputs, _ = model(images)
+            if args.tta:
+                outputs = tta(model, images)    # use TTA
+            else:
+                outputs, _ = model(images)
             dice = dice_score(outputs, masks)
             iou = iou_score(outputs, masks)
             hd, hd95 = hd_score(outputs, masks)
@@ -176,21 +192,18 @@ def test(test_loader, test_imgs, model, args):
             total_assd += assd
 
             # visualize
-            save_dir = "results"
-            os.makedirs(save_dir, exist_ok=True)
-            filename = os.path.basename(test_imgs[i])
-            ori_img = cv2.imread(test_imgs[i])  # BGR
-            if args.resize:
-                ori_img = resize_img(ori_img, is_mask=False)
-            else:
-                ori_img = cv2.resize(ori_img, (IMAGE_SIZE, IMAGE_SIZE))
-            pred = outputs[0].cpu().numpy()[0]
-            pred_mask = (pred > 0.5).astype(np.uint8)
-            contours, _ = cv2.findContours(pred_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            overlay = ori_img.copy()
-            cv2.drawContours(overlay, contours, -1, (0, 255, 0), 1)
-            cv2.imwrite(os.path.join(save_dir, filename.replace(".bmp", f"_{args.output_name}.bmp")), overlay)
+            if args.visualize:
+                save_dir = "results"
+                os.makedirs(save_dir, exist_ok=True)
+                filename = os.path.basename(test_imgs[i])
+                ori_img = draw_img[0].cpu().numpy()
 
+                pred = outputs[0].cpu().numpy()[0]
+                pred_mask = (pred > 0.5).astype(np.uint8)
+                contours, _ = cv2.findContours(pred_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                overlay = ori_img.copy()
+                cv2.drawContours(overlay, contours, -1, (0, 255, 0), 1)
+                cv2.imwrite(os.path.join(save_dir, filename.replace(".bmp", f"_{args.output_name}.bmp")), overlay)
 
     print(f"\nTest Set Dice Score: {total_dice / len(test_loader):.4f}")
     print(f"Test Set IoU Score: {total_iou / len(test_loader):.4f}")
@@ -207,14 +220,15 @@ def test(test_loader, test_imgs, model, args):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="UNet!")
+    parser = argparse.ArgumentParser(description="DCAN!")
     parser.add_argument('--ep', type=int, default=30)
     parser.add_argument('--output_name', type=str, default='pred')
     parser.add_argument('--rgb', action='store_true')       # use rgb img to train
     parser.add_argument('--resize', action='store_true')    # resize + padding
+    parser.add_argument('--tta', action='store_true')       # use TTA when testing
+    parser.add_argument('--visualize', action='store_true')      # draw image
     parser.add_argument('--test', type=str, default="none")      # test only
     return parser.parse_args()
-
 
 
 def main():
@@ -231,7 +245,5 @@ def main():
     test(test_loader, test_imgs, model, args)
 
 
-
 if __name__ == "__main__":
     main()
-
