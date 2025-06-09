@@ -190,7 +190,16 @@ def test(test_loader, test_imgs, model, args):
                 pred = outputs[0].cpu().numpy()[0]
                 pred_mask = (pred > 0.5).astype(np.uint8)
                 contours, _ = cv2.findContours(pred_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                
+                # GT contour
+                if args.drawGT:
+                    gt = masks[0].cpu().numpy()[0]
+                    gt_mask = (gt > 0.5).astype(np.uint8)
+                    contours_gt, _ = cv2.findContours(gt_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                
                 overlay = ori_img.copy()
+                if args.drawGT:
+                    cv2.drawContours(overlay, contours_gt, -1, (0, 0, 255), 1)      # Red for GT contour
                 cv2.drawContours(overlay, contours, -1, (0, 255, 0), 1)
                 cv2.imwrite(os.path.join(save_dir, filename.replace(".bmp", f"_{args.output_name}.bmp")), overlay)
 
@@ -216,6 +225,7 @@ def parse_args():
     parser.add_argument('--tta', action='store_true')       # use TTA when testing
     parser.add_argument('--visualize', action='store_true')      # draw image
     parser.add_argument('--test', type=str, default="none")      # test only
+    parser.add_argument('--drawGT', action='store_true')      # draw GT contour
     return parser.parse_args()
 
 def main():
