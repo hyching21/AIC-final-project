@@ -1,16 +1,25 @@
-# AIC final project
+# AIC final project -- Medical Image Analysis: Binary Segmentation of Physiology Images
+
+## Introduction
+<img width="350" src="example/UNet structure.png">
+<img width="350" src="example/DCAN structure.png">
+
+Our project topic is **binary segmentation of physiology images**. We used the GlaS dataset, with 85 training and 80 testing images. And we used UNet and DCAN models, conducted different experiments and used different metrics to measure overlap and boundary quality.
+
+**UNet** is an encoder-decoder neural network architecture. Its encoder acts as a contracting path, extracting context and global features, while the decoder, an expansive path, focuses on precise localization and capturing fine boundary details. The skip connection between the encoder and decoder reuse high-resolution features from encoder to improve localization and segmentation quality. Consequently, UNet has become a highly valuable model in the field of medical image processing, often demonstrating excellent performance even when trained on constrained datasets.
+
+**DCAN** extends UNet with a contour-aware decoder. It adds two expansive paths: one for precise object localization and another for refining boundary details. This dual-decoder setup improves boundary quality and enhances segmentation in applications like medical images.
+
+We use **dice** and **IoU** to evaluate the overlap between ground truth and prediction. **HD** and **ASSD** measure the distance between ground truth and predicted boundaries.
+
 ## Run code
 ### require packages
 ```
-pip install opencv-python
-pip install numpy
-pip install tqdm
-pip install staintools
-pip install spams-bin
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118  --> 呃我不確定這個，可能就裝適合你的CUDA & pytorch
+pip install -r requirements.txt
 ```
+
 ### data preparation
-去[kaggle](https://www.kaggle.com/datasets/sani84/glasmiccai2015-gland-segmentation) 下載好資料後放到dataset 裡面，像這樣
+Download data from [kaggle](https://www.kaggle.com/datasets/sani84/glasmiccai2015-gland-segmentation) as shown below
 ```
 final_project
 |__ dataset
@@ -25,7 +34,8 @@ final_project
 |__ prepare_dataset.py
 |__ unet.py
 ```
-然後跑`python prepare_dataset.py`，他會把資料整理成images、masks、test、train，變成這樣
+
+And then run `python prepare_dataset.py` to sort the data as shown below
 ```
 final_project
 |__ dataset
@@ -59,91 +69,93 @@ final_project
 |__ prepare_dataset.py
 |__ unet.py
 ```
+
 ### train model
-```
-python unet.py
-```
-跑完會把模型存到model/unet.pth<br>
-輸出圖片會存到results/{image name}_pred.bmp，也可以用`--output_name <your_output_name>` 改成自己想要的名字，image name 是圖片原本的名字(testA_1.bmp, testB_1.bmp ...)
-> ex: `--output_name base`，則輸出名稱為`{image name}_base.bmp`
+We have two models, UNet (unet.py) and DCAN (DCAN.py). Running these codes will generate a model saved in `model/{model name}.pth` and a text file `result.txt` recording the training loss.
 
-[這裡](https://drive.google.com/drive/folders/1rVyESy9RzuWLcLJSpSTzRsND2tFs0J2E?usp=sharing)可以下載我之前train 好的模型
-
-## results
-### 1. base (train 3 min, UNet_0511_base.pth)
-預設是把圖片轉成灰階、resize to 256*256，跑30個epoch<br>
-dice: 0.8491, IoU: 0.7492, last training loss: 1.7188
-```
-python unet.py
-```
-<p align="center">
-<img src="example/testA_1.bmp" width="200"/>
-<-- testA_1, testA_8-->
-<img src="example/testA_8.bmp" width="200"/>
-</p>
-
-### 2. 增加epoch
-- epoch = 300 (train 18 min, UNet_0511_ep300.pth)<br>
-    跟base 的設定一樣，只是epoch = 300<br>
+- UNet
     ```
-    python unet.py --ep 300
+    python unet.py
     ```
-    dice: 0.8645, IoU: 0.7709, last training loss: 0.0675
-<p align="center">
-<img src="example/testA_1_pred.bmp" width="200"/>
-<-- testA_1, testA_8-->
-<img src="example/testA_8_pred.bmp" width="200"/>
-</p>
+- DCAN
+    ```
+    python DCAN.py
+    ```
+- args
+    | args | usage |
+    |---|---|
+    |--ep|set the number of training epoch (default is 30 epoch)|
+    |--output_name|set the output files name (default is "pred"). This will be the name of the saved model and images|
+    |--rgb|use rgb image to train (default use gray scale iamges)|
+    |--resize|resize and padding to preserve the aspect ratio (default is directly resize to 256*256)|
+    |--tta|use TTA (Test-Time Augmentation) while testing|
+    |--visualize|draw the prediction result and save as {image name}_{output name}.bmp, image name is the original image name such as testA_36|
+    |--test|test the saved model. Usage: --test "{model_name}.pth"|
+    |--drawGT|draw the predicted image with ground truth contour|
 
-### 3. 用彩色圖片去訓練 + color normalization
-base + 用macenko 做color normalization，train_6.bmp 當 target img<br>
-```
-python unet.py --ep 30 --rgb
-python unet.py --ep 300 --rgb
-```
-- epoch = 30 (train 45 min, UNet_0512_macenko30.pth):<br>
-dice: 0.7775, IoU: 0.6571, last training loss: 1.6895 (比gray scale差)
-- epoch = 300 (train 7h 45min, UNet_0512_macenko300.pth):<br>
-dice: 0.8791, IoU: 0.7927, last training loss: 0.0663<br>
-<p align="center">
-<img src="example/testA_1_macenko.bmp" width="200"/>
-<-- testA_1 (ep=30) testA_8 -->
-<img src="example/testA_8_macenko.bmp" width="200"/>
-</p>
-<br>
-<p align="center">
-<img src="example/testA_1_macenko300.bmp" width="200"/>
-<-- testA_1 (ep=300) testA_8-->
-<img src="example/testA_8_macenko300.bmp" width="200"/>
-</p>
+## Results
+### experiments
+1. Base: gray scale, directly resize to 256*256, epoch 30
+2. Different model: U-Net and DCAN
+3. Different number of epochs: 30 vs 300
+4. RGB vs. grayscale image
+5. Directly resize to 256*256 vs. Resize + padding (in the following results, "resize" means resize + padding)
+6. With / Without data augmentation
+7. With / Without TTA(Test-Time Augmentation)
 
-### 4. resize + padding
-灰階，把圖片較短的邊resize 到256，另一邊等比例縮小(base 是直接把圖片變成正方形去訓練，這裡保留原本的長寬比)，不夠的地方zero padding，最後整張圖片還是256*256(為了配合UNet 的架構，他好像只能收$2^n$ * $2^n$的圖片?)<br>
-```
-python unet.py --ep 30 --resize
-python unet.py --ep 300 --resize
-```
-- epoch = 30 (train 2 min, UNet_0514_resize30.pth)<br>
-dice: 0.8367, IoU: 0.7343 (比gray scale差)
-- epoch = 300 (train 18 min, UNet_0514_resize300.pth)<br>
-dice: 0.8531, IoU: 0.7571, last training loss: 0.0600 (好像沒有很好?)<br>
-<p align="center">
-<img src="example/testA_1_resize.bmp" width="200"/>
-<-- testA_1 (ep=30) testA_8 -->
-<img src="example/testA_8_resize.bmp" width="200"/>
-</p>
-<br>
-<p align="center">
-<img src="example/testA_1_resize300.bmp" width="200"/>
-<-- testA_1 (ep=300) testA_8-->
-<img src="example/testA_8_resize300.bmp" width="200"/>
-</p>
+### UNet
+| setting | Dice | IoU | HD | HD95 | ASSD |
+|---|---|---|---|---|---|
+|base (ep 30)|0.8439|0.7398|58.6638|17.5872|2.7776|
+|base, ep 300|0.8556|0.7599|53.3327|10.5369|1.7509|
+|base, ep 300, TTA|0.8776|0.7944|49.4731|9.1324|1.5478|
+|
+|resize, ep 30|0.8240|0.7175|44.3854|14.9751|2.5614|
+|resize, ep 300|0.8458|0.7449|43.8974|14.1630|2.2574|
+|resize, ep 300, TTA|0.8555|0.7672|42.3106|14.3131|2.8516|
+|
+|rgb, ep 30|0.8186|0.7110|45.3115|12.1988|2.2212|
+|rgb, ep 300|0.8675|0.7782|44.4096|7.5542|1.2965|
+|rgb, ep 300, TTA|0.8872|0.8088|40.9608|6.5984|1.1374|
+|
+|rgb, resize, aug, ep 30|0.8711|0.7796|41.0408|9.7818|1.3726|
+|rgb, resize, aug, ep 300|0.8844|0.8014|39.0133|6.2782|1.0860|
+|rgb, resize, aug, ep 300, TTA|**0.8969**|**0.8214**|**33.5581**|**5.2760**|**0.9053**|
 
-## TODO
-- 更多實驗
-    > try different ep, lr.<br>
-    > different color normalization method: vahadane
-    > different color normalization target image (current train_6)
-    > how to improve rgb image's prediction result? 為什麼用彩色圖片訓練反而比灰階的訓練結果還要差!?
-    > training set & validation set
-    > try different UNet architecture?
+### DCAN
+| setting | Dice | IoU | HD | HD95 | ASSD |
+|---|---|---|---|---|---|
+|base (ep 30)|0.8793|0.7943|44.4036|10.4059|1.7353|
+|base, ep 300|0.8422|0.7843|51.0730|9.8453|1.8192|
+|base, ep 300, TTA|0.8850|0.8056|47.4312|9.0310|1.5612|
+|
+|rgb, ep 30|0.8743|0.7868|41.8043|13.7098|2.0924|
+|rgb, ep 300|0.8831|0.7989|49.6056|12.3183|1.7844|
+|rgb, ep 300, TTA|**0.8971**|**0.8206**|46.3536|8.8439|1.3252|
+|
+|rgb, resize, aug, ep 30|0.8786|0.7917|37.3987|11.6201|1.5970|
+|rgb, resize, aug, ep 300|0.8772|0.7912|38.2794|6.3488|1.0812|
+|rgb, resize, aug, ep 300, TTA|0.8885|0.8092|**36.6038**|**5.9470**|**1.0650**|
+
+For gray and RGB images, gray image slightly outperforms RGB iamge when training with 30 epoch, but after training longer (300 epoch), RGB image helps the model to get a better results.
+
+Pad-resize hurts Grayscale model but enhances RGB model. We think it is because that RGB models can use color gradients to distinguish real edges from padding, and padding keeps the original shape of image. On the other hand, gray scale image only has intensity, so the padding confuses the model and therefore gives a poorer result.
+
+TTA effectively reduces random noise and keep more robust patterns, improving the evaluate metrics for 2% to 4%.
+
+As for different models, for area metrics like Dice, DCAN generally performs better. As for HD95, DCAN is expected to perform better, and it does on grayscale images, but when using RGB, UNet actually outperforms. We guess it’s because additional color may distract DCAN from focusing on precise boundaries.
+
+### result images
+The green line is our prediction result, and the red line is the ground truth contour.
+
+**UNet** (rgb, resize, aug, ep 300, TTA)
+
+<img width="200" src="example/testA_27_augtta349_gt.jpg">
+<img width="200" src="example/testA_36_augtta349_gt.jpg">
+<img width="200" src="example/testB_7_augtta349_gt.jpg">
+
+**DCAN** (rgb, resize, aug, ep 300, TTA)
+
+<img width="200" src="example/testA_27_dcan_augtta349_gt.jpg">
+<img width="200" src="example/testA_36_dcan_augtta349_gt.jpg">
+<img width="200" src="example/testB_7_dcan_augtta349_gt.jpg">
