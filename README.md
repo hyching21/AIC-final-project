@@ -1,8 +1,7 @@
 # AIC final project -- Medical Image Analysis: Binary Segmentation of Physiology Images
 
 ## Introduction
-<img width="350" src="example/UNet structure.png">
-<img width="350" src="example/DCAN structure.png">
+<img width="350" src="example/UNet structure.png"> <img width="350" src="example/DCAN structure.png">
 
 Our project topic is **binary segmentation of physiology images**. We used the GlaS dataset, with 85 training and 80 testing images. And we used UNet and DCAN models, conducted different experiments and used different metrics to measure overlap and boundary quality.
 
@@ -85,11 +84,11 @@ We have two models, UNet (unet.py) and DCAN (DCAN.py). Running these codes will 
     | args | usage |
     |---|---|
     |--ep|set the number of training epoch (default is 30 epoch)|
-    |--output_name|set the output files name (default is "pred"). This will be the name of the saved model and images|
+    |--output_name|set the output files name (default is "pred").<br>This will be the name of the saved model and images|
     |--rgb|use rgb image to train (default use gray scale iamges)|
-    |--resize|resize and padding to preserve the aspect ratio (default is directly resize to 256*256)|
+    |--resize|resize and padding to preserve the aspect ratio<br>(default is directly resize to 256*256)|
     |--tta|use TTA (Test-Time Augmentation) while testing|
-    |--visualize|draw the prediction result and save as {image name}_{output name}.bmp, image name is the original image name such as testA_36|
+    |--visualize|draw the prediction result and save as {image name}_{output name}.bmp,<br>image name is the original image name such as testA_36|
     |--test|test the saved model. Usage: --test "{model_name}.pth"|
     |--drawGT|draw the predicted image with ground truth contour|
 
@@ -109,15 +108,12 @@ We have two models, UNet (unet.py) and DCAN (DCAN.py). Running these codes will 
 |base (ep 30)|0.8439|0.7398|58.6638|17.5872|2.7776|
 |base, ep 300|0.8556|0.7599|53.3327|10.5369|1.7509|
 |base, ep 300, TTA|0.8776|0.7944|49.4731|9.1324|1.5478|
-|
 |resize, ep 30|0.8240|0.7175|44.3854|14.9751|2.5614|
 |resize, ep 300|0.8458|0.7449|43.8974|14.1630|2.2574|
 |resize, ep 300, TTA|0.8555|0.7672|42.3106|14.3131|2.8516|
-|
 |rgb, ep 30|0.8186|0.7110|45.3115|12.1988|2.2212|
 |rgb, ep 300|0.8675|0.7782|44.4096|7.5542|1.2965|
 |rgb, ep 300, TTA|0.8872|0.8088|40.9608|6.5984|1.1374|
-|
 |rgb, resize, aug, ep 30|0.8711|0.7796|41.0408|9.7818|1.3726|
 |rgb, resize, aug, ep 300|0.8844|0.8014|39.0133|6.2782|1.0860|
 |rgb, resize, aug, ep 300, TTA|**0.8969**|**0.8214**|**33.5581**|**5.2760**|**0.9053**|
@@ -128,11 +124,9 @@ We have two models, UNet (unet.py) and DCAN (DCAN.py). Running these codes will 
 |base (ep 30)|0.8793|0.7943|44.4036|10.4059|1.7353|
 |base, ep 300|0.8422|0.7843|51.0730|9.8453|1.8192|
 |base, ep 300, TTA|0.8850|0.8056|47.4312|9.0310|1.5612|
-|
 |rgb, ep 30|0.8743|0.7868|41.8043|13.7098|2.0924|
 |rgb, ep 300|0.8831|0.7989|49.6056|12.3183|1.7844|
 |rgb, ep 300, TTA|**0.8971**|**0.8206**|46.3536|8.8439|1.3252|
-|
 |rgb, resize, aug, ep 30|0.8786|0.7917|37.3987|11.6201|1.5970|
 |rgb, resize, aug, ep 300|0.8772|0.7912|38.2794|6.3488|1.0812|
 |rgb, resize, aug, ep 300, TTA|0.8885|0.8092|**36.6038**|**5.9470**|**1.0650**|
@@ -150,12 +144,8 @@ The green line is our prediction result, and the red line is the ground truth co
 
 **UNet** (rgb, resize, aug, ep 300, TTA)
 
-<img width="200" src="example/testA_27_augtta349_gt.jpg">
-<img width="200" src="example/testA_36_augtta349_gt.jpg">
-<img width="200" src="example/testB_7_augtta349_gt.jpg">
+<img width="250" src="example/testA_27_augtta349_gt.jpg"> <img width="250" src="example/testA_36_augtta349_gt.jpg"> <img width="250" src="example/testB_7_augtta349_gt.jpg">
 
 **DCAN** (rgb, resize, aug, ep 300, TTA)
 
-<img width="200" src="example/testA_27_dcan_augtta349_gt.jpg">
-<img width="200" src="example/testA_36_dcan_augtta349_gt.jpg">
-<img width="200" src="example/testB_7_dcan_augtta349_gt.jpg">
+<img width="250" src="example/testA_27_dcan_augtta349_gt.jpg"> <img width="250" src="example/testA_36_dcan_augtta349_gt.jpg"> <img width="250" src="example/testB_7_dcan_augtta349_gt.jpg">
